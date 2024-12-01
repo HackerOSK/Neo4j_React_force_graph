@@ -5,208 +5,306 @@ import neo4j from 'neo4j-driver';
 import gql from 'graphql-tag';
 
 // Define the GraphQL schema
-const typeDefs = gql`
-  type Article {
-    id: ID
-    url: String
-    score: Int
-    title: String
-    comments: String
-    created: DateTime
-    user : String
-  }
+// const typeDefs = gql`
+//   type Article {
+//     id: ID
+//     url: String
+//     score: Int
+//     title: String
+//     comments: String
+//     created: DateTime
+//     user : String
+//   }
 
-  type User {
-    username: String
-    created: DateTime
-    karma: Int
-    about: String
-    avatar: String
-    articles: [Article]
-  }
+//   type User {
+//     username: String
+//     created: DateTime
+//     karma: Int
+//     about: String
+//     avatar: String
+//     articles: [Article]
+//   }
 
-  type Tag {
-    name: String
-  }
+//   type Tag {
+//     name: String
+//   }
 
-  type Query {
-    getArticles: [Article]
-    getArticle(id: ID!): Article
-    getUsers: [User]
-    getUser(username: String!): User
-    getTags: [Tag]
-    getTag(name: String!): Tag
-    getArticlesByTag(tagName: String!): [Article]
-    getArticlesByUser(username: String!): [Article]
-  }
+//   type Query {
+//     getArticles: [Article]
+//     getArticle(id: ID!): Article
+//     getUsers: [User]
+//     getUser(username: String!): User
+//     getTags: [Tag]
+//     getTag(name: String!): Tag
+//     getArticlesByTag(tagName: String!): [Article]
+//     getArticlesByUser(username: String!): [Article]
+//   }
 
-  type Mutation {
-    createArticle(
-      url: String
-      score: Int
-      title: String
-      comments: String
-      created: DateTime
-    ): Article
-    createUser(
-      username: String!
-      created: DateTime
-      karma: Int
-      about: String
-      avatar: String
-    ): User
-    createTag(name: String!): Tag
-  }
+//   type Mutation {
+//     createArticle(
+//       url: String
+//       score: Int
+//       title: String
+//       comments: String
+//       created: DateTime
+//     ): Article
+//     createUser(
+//       username: String!
+//       created: DateTime
+//       karma: Int
+//       about: String
+//       avatar: String
+//     ): User
+//     createTag(name: String!): Tag
+//   }
+// `;
+
+// const typeDefs = `#graphql
+// type Transaction {
+//   txid: ID!
+// }
+
+// type Vin {
+//   txid: String!
+//   voutIndex: Int! 
+//   prevout: Prevout!
+// }
+
+// type Vout {
+//   value: Int! 
+//   address: String 
+// }
+
+// type Prevout {
+//   value: Int!
+//   address: String 
+// }
+
+// type CentralizedExchange {
+// name: String!
+// website: String
+// twitter: String
+// crunchbase: String
+// linkedin: String
+// }
+
+// type Query {
+//   transactions: [Transaction!]!
+// }
+
+// type Mutation {
+//   mapCexTransaction(fromAddress: String!, toAddress: String!): CentralizedExchange!
+// }
+// `
+
+const typeDefs = `#graphql
+type Transaction {
+  hash: String
+  vin: [Vin]
+  vout: [Vout]
+  totalVinValue: Int!
+  totalVoutValue: Int!
+  fee: Int
+  confirmed: Boolean
+  blockHeight: Int
+  involvedCex: CentralizedExchange @relationship(type: "INVOLVES", direction: OUT)
+}
+
+type Vin {
+  txid: String
+  voutIndex: Int
+  value: Int
+  address: String
+}
+
+type Vout {
+  value: Int
+  address: String
+}
+
+type CentralizedExchange {
+  name: String!
+  website: String
+  twitter: String
+  crunchbase: String
+  linkedin: String
+}
+
+type Query {
+  transaction(hash: String): Transaction
+  transactions: [Transaction]
+}
+
+type Mutation {
+  mapCexTransaction(fromAddress: String!, toAddress: String!): CentralizedExchange!
+}
 `;
 
-// Define resolvers for your GraphQL API
+// resolvers.js
 const resolvers = {
-  Query: {
-    getArticles: async () => {
-      const session = driver.session();
-      try {
-        const result = await session.run('MATCH (a:Article) RETURN a.id AS id, a.url AS url, a.score AS score, a.title AS title, a.comments AS comments, a.created AS created, a.user AS user');
-        return result.records.map((record) => ({
-          id: record.get('id'), // Explicitly map the 'id' property
-          url: record.get('url'),
-          score: record.get('score'),
-          title: record.get('title'),
-          comments: record.get('comments'),
-          created: record.get('created'),
-          user: record.get('user'),
-        }));
-      } finally {
-        await session.close();
-      }
-    },
-    
-    getArticle: async (_, { id }) => {
-      const session = driver.session();
-      try {
-        const result = await session.run(
-          'MATCH (a:Article {id: $id}) RETURN a',
-          { id }
-        );
-        return result.records[0]?.get('a').properties || null;
-      } finally {
-        await session.close();
-      }
-    },
-    getUsers: async () => {
-      const session = driver.session();
-      try {
-        const result = await session.run('MATCH (u:User) RETURN u');
-        return result.records.map((record) => record.get('u').properties);
-      } finally {
-        await session.close();
-      }
-    },
-    getUser: async (_, { username }) => {
-      const session = driver.session();
-      try {
-        const result = await session.run(
-          'MATCH (u:User {username: $username}) RETURN u',
-          { username }
-        );
-        return result.records[0]?.get('u').properties || null;
-      } finally {
-        await session.close();
-      }
-    },
-    getTags: async () => {
-      const session = driver.session();
-      try {
-        const result = await session.run('MATCH (t:Tag) RETURN t');
-        return result.records.map((record) => record.get('t').properties);
-      } finally {
-        await session.close();
-      }
-    },
-    getTag: async (_, { name }) => {
-      const session = driver.session();
-      try {
-        const result = await session.run(
-          'MATCH (t:Tag {name: $name}) RETURN t',
-          { name }
-        );
-        return result.records[0]?.get('t').properties || null;
-      } finally {
-        await session.close();
-      }
-    },
-    getArticlesByTag: async (_, { tagName }) => {
+  Transaction: {
+    // Computed field for total value of all vin values
+    totalVinValue: async (parent, args, context) => {
       const session = driver.session();
       try {
         const result = await session.run(
           `
-          MATCH (t:Tag {name: $tagName})<-[:HAS_TAG]-(a:Article)
-          RETURN a
+            MATCH (t:Transaction {hash: $hash})-[:FUNDS]->(vin:Vin)
+            RETURN sum(vin.value) AS totalVinValue
           `,
-          { tagName }
+          { hash: parent.hash }
         );
-        return result.records.map((record) => record.get('a').properties);
+        return result.records[0]?.get("totalVinValue") || 0;
       } finally {
         await session.close();
       }
     },
-    getArticlesByUser: async (_, { username }) => {
+
+    // Computed field for total value of all vout values
+    totalVoutValue: async (parent, args, context) => {
       const session = driver.session();
       try {
         const result = await session.run(
           `
-          MATCH (u:User {username: $username})-[:SUBMITTED]->(a:Article)
-          RETURN a
+            MATCH (t:Transaction {hash: $hash})-[:OUTPUT]->(vout:Vout)
+            RETURN sum(vout.value) AS totalVoutValue
           `,
-          { username }
+          { hash: parent.hash }
         );
-        return result.records.map((record) => record.get('a').properties);
+        return result.records[0]?.get("totalVoutValue") || 0;
+      } finally {
+        await session.close();
+      }
+    },
+
+    involvedCex: async (parent, args, context) => {
+      const session = driver.session();
+      try {
+        const result = await session.run(
+          `
+            MATCH (t:Transaction {hash: $hash})-[:INVOLVES]->(cex:CentralizedExchange)
+            RETURN cex
+          `,
+          { hash: parent.hash }
+        );
+        return result.records.map((record) => record.get("cex").properties);
       } finally {
         await session.close();
       }
     },
   },
+
+  Query: {
+    // Resolver for a single transaction
+    transaction: async (_, { hash }, context) => {
+      const session = driver.session();
+      try {
+        const result = await session.run(
+          `
+            MATCH (t:Transaction {hash: $hash})
+            OPTIONAL MATCH (vin:Vin)-[:FUNDS]->(t)
+            OPTIONAL MATCH (t)-[:OUTPUT]->(vout:Vout)
+            RETURN t, collect(vin) AS vins, collect(vout) AS vouts
+          `,
+          { hash }
+        );
+
+        if (result.records.length === 0) return null;
+
+        const record = result.records[0];
+        const transaction = record.get("t").properties;
+        const vins = record.get("vins").map((vin) => vin.properties);
+        const vouts = record.get("vouts").map((vout) => vout.properties);
+
+        return {
+          ...transaction,
+          vin: vins,
+          vout: vouts,
+        };
+      } finally {
+        await session.close();
+      }
+    },
+
+    // Resolver for all transactions
+    transactions: async (_, __, context) => {
+      const session = driver.session();
+      try {
+        const result = await session.run(
+          `
+            MATCH (t:Transaction)
+            OPTIONAL MATCH (vin:Vin)-[:FUNDS]->(t)
+            OPTIONAL MATCH (t)-[:OUTPUT]->(vout:Vout)
+            RETURN t, collect(vin) AS vins, collect(vout) AS vouts
+          `
+        );
+
+        return result.records.map((record) => {
+          const transaction = record.get("t").properties;
+          const vins = record.get("vins").map((vin) => vin.properties);
+          const vouts = record.get("vouts").map((vout) => vout.properties);
+
+          return {
+            ...transaction,
+            vin: vins,
+            vout: vouts,
+          };
+        });
+      } finally {
+        await session.close();
+      }
+    },
+  },
+
   Mutation: {
-    createArticle: async (_, { url, score, title, comments, created }) => {
+    async mapCexTransaction(_, { fromAddress, toAddress }, context) {
       const session = driver.session();
+
       try {
-        const result = await session.run(
-          `
-          CREATE (a:Article {id: randomUUID(), url: $url, score: $score, title: $title, comments: $comments, created: $created})
-          RETURN a
-          `,
-          { url, score, title, comments, created }
+        const data = await getEntityTransfers(fromAddress, toAddress);
+
+        if (!data || !data.transfers || data.transfers.length === 0) {
+          throw new Error(`No transactions found between ${fromAddress} and ${toAddress}`);
+        }
+
+        const transfer = data.transfers.find(
+          (t) =>
+            t.toAddress &&
+            t.toAddress.arkhamEntity &&
+            t.toAddress.arkhamEntity.type === "cex"
         );
-        return result.records[0]?.get('a').properties || null;
-      } finally {
-        await session.close();
-      }
-    },
-    createUser: async (_, { username, created, karma, about, avatar }) => {
-      const session = driver.session();
-      try {
-        const result = await session.run(
-          `
-          CREATE (u:User {username: $username, created: $created, karma: $karma, about: $about, avatar: $avatar})
-          RETURN u
-          `,
-          { username, created, karma, about, avatar }
-        );
-        return result.records[0]?.get('u').properties || null;
-      } finally {
-        await session.close();
-      }
-    },
-    createTag: async (_, { name }) => {
-      const session = driver.session();
-      try {
-        const result = await session.run(
-          `
-          CREATE (t:Tag {name: $name})
-          RETURN t
-          `,
-          { name }
-        );
-        return result.records[0]?.get('t').properties || null;
+
+        if (!transfer) {
+          throw new Error(`No transactions involving a centralized exchange found.`);
+        }
+
+        const cexEntity = transfer.toAddress.arkhamEntity;
+
+        const query = `
+          MATCH (t:Transaction {hash: $hash})
+          MERGE (cex:CentralizedExchange {
+            name: $name,
+            website: $website,
+            twitter: $twitter,
+            crunchbase: $crunchbase,
+            linkedin: $linkedin
+          })
+          MERGE (t)-[:INVOLVES]->(cex)
+          RETURN cex
+        `;
+
+        const params = {
+          hash: transfer.txid,
+          name: cexEntity.name,
+          website: cexEntity.website || null,
+          twitter: cexEntity.twitter || null,
+          crunchbase: cexEntity.crunchbase || null,
+          linkedin: cexEntity.linkedin || null,
+        };
+
+        const result = await session.run(query, params);
+
+        return result.records[0].get("cex").properties;
       } finally {
         await session.close();
       }
@@ -214,10 +312,14 @@ const resolvers = {
   },
 };
 
+
+
+
+
 // Configure Neo4j database connection
-const URI = "neo4j+s://4840df7e.databases.neo4j.io";
+const URI = "neo4j+s://2a5d4ce2.databases.neo4j.io";
 const USER = "neo4j";
-const PASSWORD = "8Jy25x7dOqmCwKPa2zrbv7eAloSQdXfx28Wh2STda8k";
+const PASSWORD = "xmsSwC4kCouphYt-mtAivpVyJzmkZLBQO4MHAjGNfYE";
 const driver = neo4j.driver(URI, neo4j.auth.basic(USER, PASSWORD));
 
 // Initialize Neo4jGraphQL
